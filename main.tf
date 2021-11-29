@@ -1,24 +1,47 @@
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 3.27"
-    }
-  }
-
-  required_version = ">= 0.14.9"
-}
-
 provider "aws" {
   profile = "default"
-  region  = "us-west-2"
+  region  = "us-west-1"
 }
 
-resource "aws_instance" "app_server" {
-  ami           = "ami-830c94e3"
-  instance_type = "t2.micro"
+resource "random_string" "random" {
+  length  = 6
+  special = false
+  upper   = false
+}
 
-  tags = {
-    Name = "ExampleAppServerInstance"
+
+resource "aws_s3_bucket" "mys3bucket" {
+  bucket = "mys3bucket-${random_string.random.result}"
+}
+
+
+resource "aws_sqs_queue" "q" {
+  name   = "s3-event-queue"
+  policy = <<POLICY
+{
+  "Version": "2012-10-17",
+  "Id": "sqspolicy",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "sqs:SendMessage",
+      "Resource": "arn:aws:sqs:*:*:s3-event-queue",
+      "Condition": {
+        "ArnEquals": { "aws:SourceArn": "${aws_s3_bucket.mys3bucket.arn}" }
+      }
+    }
+  ]
+}
+POLICY
+}
+
+
+resource "aws_s3_bucket_notification" "bucket_notification" {
+  bucket = aws_s3_bucket.mys3bucket.id
+
+  queue {
+    queue_arn = aws_sqs_queue.q.arn
+    events    = ["s3:ObjectCreated:*"]
   }
 }
